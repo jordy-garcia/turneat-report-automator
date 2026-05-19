@@ -1,0 +1,18 @@
+# Environment and bytecode
+.venv/
+.DS_Store
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Secrets and local config
+.env
+.env.*
+!.env.example
+
+# Local config (copy from config.example.json)
+config.json
+
+# Generated output
+debug/
+reports/
