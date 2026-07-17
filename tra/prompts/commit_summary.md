@@ -14,18 +14,19 @@ Cada línea de commit incluye una etiqueta de entorno entre corchetes [$env_labe
 
 PROHIBIDO inventar trabajo: no incluyas temas (p. ej. dashboard, pagos) si NINGÚN mensaje de la lista alude a ellos. Si no hay evidencia, omite el punto.
 
-Traducción a negocio: no uses lenguaje excesivamente técnico salvo que sea imprescindible. Traduce los commits a logros o mejoras en primera persona.
+Traducción a negocio: no uses lenguaje excesivamente técnico salvo que sea imprescindible. Traduce los commits a logros o mejoras con redacción nominal.
 
-## Voz y persona (obligatorio)
+## Voz y estilo (obligatorio)
 
-Redacta TODO el reporte en primera persona del singular (yo), como si el responsable del informe hablara directamente al cliente.
+Redacta TODO el reporte con estilo nominal / sustantivo: describe el trabajo como un entregable o actividad, no como una acción personal.
 
-- Usa verbos en primera persona: «Implementé», «Corregí», «Integré», «Documenté», «Ajusté».
-- PROHIBIDO primera persona del plural: no uses «implementamos», «realizamos», «mejoramos», «entregamos».
-- PROHIBIDO voz pasiva impersonal que oculte al autor: evita «se implementó», «fue corregido», «se añadió».
-- PROHIBIDO tercera persona para tu trabajo: no uses «el desarrollador», «el equipo», «se realizó el trabajo».
+- Usa sustantivos de acción: «Desarrollo de…», «Corrección de…», «Integración de…», «Documentación de…», «Ajuste de…», «Estructura de…», «Implementación de…».
+- PROHIBIDO primera persona (singular o plural): no uses «desarrollé», «implementé», «corregí», «implementamos», «realizamos».
+- PROHIBIDO voz pasiva impersonal: evita «se implementó», «fue corregido», «se añadió».
+- PROHIBIDO tercera persona con sujeto humano: no uses «el desarrollador», «el equipo», «se realizó el trabajo».
 
-Ejemplo: de `fix: auth bug` → «Corregí un error de autenticación para reforzar la seguridad del acceso de los usuarios».
+Ejemplo: de `fix: auth bug` → «Corrección de un error de autenticación para reforzar la seguridad del acceso de los usuarios».
+Otro ejemplo: de `feat: AI model structure` → «Estructura de un modelo de IA para…» (no «Estructuré un modelo…»).
 
 Autoría: la lista ya está filtrada a tu trabajo; NO atribuyas tareas a terceros.
 
@@ -44,7 +45,7 @@ Responde SOLO con un objeto JSON válido (sin markdown fuera del JSON), con esta
         {
           "title": "Subárea (puede terminar en :)",
           "bullets": [
-            {"text": "Logré o entregué algo concreto en primera persona (ej. Implementé…)", "env": "$env_example"}
+            {"text": "Entregable o actividad en estilo nominal (ej. Implementación de…, Desarrollo de…)", "env": "$env_example"}
           ]
         }
       ]
@@ -56,7 +57,7 @@ Responde SOLO con un objeto JSON válido (sin markdown fuera del JSON), con esta
 Reglas para el JSON:
 
 - Si no hay commits en la lista, devuelve: `{"reporte": []}`.
-- "text": frase corta en primera persona del singular, orientada a valor de negocio; debe corresponder a uno o más commits de la lista.
+- "text": frase corta en estilo nominal (sustantivo de acción + de…), orientada a valor de negocio; debe corresponder a uno o más commits de la lista.
 - "env": exactamente uno de: $env_labels. Usa el de mayor despliegue según este orden: $env_priority.
 - PROHIBIDO usar como "title" superior frases genéricas como «Resumen de commits», «Reporte mensual» o el nombre del proyecto como metatítulo. Usa siempre áreas de impacto del trabajo.
 
