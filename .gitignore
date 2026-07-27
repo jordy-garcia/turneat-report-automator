@@ -16,3 +16,4 @@ config.json
 # Generated output
 debug/
 reports/
+docs/*

@@ -1,8 +1,8 @@
 import json
 
+from tra.ai import TextGenerator
 from tra.config import AppConfig, ReportSettings
 from tra.debug_io import write_paraphrase_debug
-from tra.gemini_client import GeminiClient
 from tra.json_utils import strip_json_fence
 from tra.prompt_loader import render_prompt
 
@@ -10,7 +10,7 @@ from tra.prompt_loader import render_prompt
 class ExtraTaskParaphraser:
     def __init__(
         self,
-        client: GeminiClient,
+        client: TextGenerator,
         settings: ReportSettings,
         config: AppConfig,
     ) -> None:
@@ -35,13 +35,13 @@ class ExtraTaskParaphraser:
             label,
             extra_tasks,
             prompt,
-            self._settings.gemini_paraphrase_model,
+            self._settings.paraphrase_model,
         )
 
         try:
             raw = strip_json_fence(
                 self._client.generate(
-                    prompt, model=self._settings.gemini_paraphrase_model
+                    prompt, model=self._settings.paraphrase_model
                 )
             )
         except Exception:

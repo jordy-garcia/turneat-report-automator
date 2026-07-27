@@ -9,22 +9,22 @@ def format_api_error(err: Exception) -> str:
         code = int(getattr(err, "code", 0) or 0)
         status = str(getattr(err, "status", "") or "").upper()
         if code == 408 or "DEADLINE" in status or "TIMEOUT" in status:
-            return "Gemini request timed out"
+            return "AI request timed out"
         if code == 503 or status == "UNAVAILABLE" or "UNAVAILABLE" in status:
-            return "Gemini service unavailable (503)"
+            return "AI service unavailable (503)"
         if code == 429 or "RESOURCE_EXHAUSTED" in status:
-            return "Gemini rate limit / quota exceeded (429)"
+            return "AI rate limit / quota exceeded (429)"
         if code in (500, 502):
-            return "Gemini server error"
+            return "AI server error"
         if 400 <= code < 500:
-            return f"Gemini client error ({code})"
-        return f"Gemini API error ({code})"
+            return f"AI client error ({code})"
+        return f"AI API error ({code})"
     low = str(err).lower()
     if "timeout" in low or "timed out" in low or "deadline exceeded" in low:
-        return "Gemini request timed out"
+        return "AI request timed out"
     if "503" in str(err) or "unavailable" in low or "high demand" in low:
-        return "Gemini service unavailable (503)"
-    return "Gemini API call failed"
+        return "AI service unavailable (503)"
+    return "AI API call failed"
 
 
 class GeminiClient:
@@ -41,7 +41,7 @@ class GeminiClient:
             )
             text = getattr(response, "text", None)
             if not text:
-                msg = "Gemini returned an empty response"
+                msg = "AI returned an empty response"
                 print(msg, file=sys.stderr)
                 raise RuntimeError(msg)
             return text

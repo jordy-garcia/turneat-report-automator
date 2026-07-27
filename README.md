@@ -1,13 +1,13 @@
 # Turneat Report Automator
 
-Generate monthly activity PDFs from your git commits. The tool filters commits by author email, optionally assigns hours per project, and uses Google Gemini to summarize work into a structured report (Spanish output by default).
+Generate monthly activity PDFs from your git commits. The tool filters commits by author email, optionally assigns hours per project, and uses an AI provider (Gemini by default) to summarize work into a structured report (Spanish output by default).
 
 ## Requirements
 
 - Python **3.11+**
 - [Git](https://git-scm.com/) installed
 - Local clones of the repositories you want to report on (absolute paths in config)
-- A [Google AI Studio](https://aistudio.google.com/apikey) API key (Gemini)
+- An API key for your chosen AI provider (Gemini by default — [Google AI Studio](https://aistudio.google.com/apikey))
 
 ## Quick start
 
@@ -26,7 +26,7 @@ cp .env.example .env
 
 Edit **`config.json`**: set the reporting month/year, your git `author_emails`, repository paths, and projects.
 
-Edit **`.env`**: set your API key:
+Edit **`.env`**: set your API key (for the default Gemini provider):
 
 ```env
 GOOGLE_API_KEY=your_key_here
@@ -66,9 +66,12 @@ Copy `config.example.json` to `config.json`. Two top-level sections:
 | `env_map` | Maps environment names to branch name patterns (see below) |
 | `env_default` | Label when no branch pattern matches (default: `dev`) |
 | `total_hours` | Monthly budget when `report_hours` is `true` |
-| `gemini_model` | Model for commit summaries |
-| `gemini_paraphrase_model` | Model for extra-task paraphrasing |
+| `ai_provider` | AI backend id (built-in: `gemini`; default `gemini`) |
+| `summary_model` | Model id for commit summaries |
+| `paraphrase_model` | Model id for extra-task paraphrasing |
 | `write_ai_debug_file` | Write prompt/context files under `debug/` |
+
+> **Breaking rename:** older configs used `gemini_model` / `gemini_paraphrase_model`. Rename those keys to `summary_model` / `paraphrase_model` and add `ai_provider` if missing.
 
 ### `projects`
 
@@ -79,7 +82,7 @@ Each project becomes one PDF: `reports/Report_<name>_<month>_<year>.pdf`.
 | `name` | Project title on the PDF |
 | `repos` | List of local repo paths (string) or objects with overrides (see below) |
 | `hours` | Optional fixed hours for this project (when `report_hours` is `true`) |
-| `extra_tasks` | Optional non-git tasks (`category` + `description`), paraphrased by Gemini |
+| `extra_tasks` | Optional non-git tasks (`category` + `description`), paraphrased by the AI provider |
 
 **Environment mapping** (`env_map`): each key is the tag shown on commits and PDF bullets; each value is a list of branch names to match (case-insensitive, compared to the branch path and its last segment). Order matters: the first matching environment wins, so list higher-priority environments first (e.g. `prod` before `dev`).
 
@@ -94,7 +97,7 @@ Each project becomes one PDF: `reports/Report_<name>_<month>_<year>.pdf`.
 
 If `env_map` is omitted, the same structure above is used as the default.
 
-The same mapping is used everywhere: each commit line sent to Gemini is prefixed with `[env]`, the prompt includes the full `env_map` rules, and PDF bullets use those labels when `tag_environment` is `true`.
+The same mapping is used everywhere: each commit line sent to the AI is prefixed with `[env]`, the prompt includes the full `env_map` rules, and PDF bullets use those labels when `tag_environment` is `true`.
 
 **Hour assignment** (when `report_hours` is `true`):
 
@@ -139,8 +142,9 @@ Per-repo `author_emails` overrides the global list for that repository only.
     "commit_date_basis": "committer",
     "exclude_pr_merge_commits": true,
     "exclude_environment_sync_merges": true,
-    "gemini_model": "gemini-2.5-flash",
-    "gemini_paraphrase_model": "gemini-2.5-flash",
+    "ai_provider": "gemini",
+    "summary_model": "gemini-2.5-flash",
+    "paraphrase_model": "gemini-2.5-flash",
     "write_ai_debug_file": true
   },
   "projects": [
@@ -164,6 +168,36 @@ Per-repo `author_emails` overrides the global list for that repository only.
 }
 ```
 
+## Changing the AI provider
+
+By default the app uses **Gemini** (`ai_provider: "gemini"`). Summarizers and paraphrasers talk to a small adapter interface (`TextGenerator`), not to a vendor SDK directly.
+
+### Switch models (same vendor)
+
+1. Set `summary_model` and `paraphrase_model` in `config.json` to model ids your provider accepts.
+2. Keep `ai_provider` as `gemini` and your Gemini key in `.env` (`GOOGLE_API_KEY` or `GEMINI_API_KEY`).
+
+### Use a different vendor
+
+There is no second built-in vendor yet. To plug one in:
+
+1. **Implement** the adapter — a class with:
+
+   ```python
+   def generate(self, prompt: str, *, model: str | None = None) -> str:
+       ...
+   ```
+
+   See `tra/ai/gemini.py` for the reference implementation.
+
+2. **Register** it in `tra/ai/factory.py` inside `create_text_generator` (and add the id to `SUPPORTED_PROVIDERS`).
+
+3. **Resolve the API key** in `tra/config.py` (`_PROVIDER_API_KEY_VARS`) and document the env var in `.env.example`.
+
+4. **Configure** `ai_provider`, `summary_model`, and `paraphrase_model` in `config.json`, then set the new key in `.env`.
+
+Prompts under `tra/prompts/` stay vendor-agnostic; they only need a model that returns the expected JSON shapes.
+
 ## Customizing AI prompts
 
 Prompts live in `tra/prompts/` as Markdown files. They use `$variable` placeholders (Python `string.Template`):
@@ -178,19 +212,20 @@ Edit these files to change tone or rules without changing Python code.
 | Path | Contents |
 |------|----------|
 | `reports/` | Generated PDFs (cleared each run) |
-| `debug/` | Optional Gemini prompts and commit lists (cleared each run) |
+| `debug/` | Optional AI prompts and commit lists (cleared each run) |
 
 ## Security
 
 - Never commit `config.json` or `.env` (both are gitignored).
-- If an API key was ever pushed to git, revoke it in Google AI Studio and create a new one.
+- If an API key was ever pushed to git, revoke it with the provider and create a new one.
 
 ## Project layout
 
 ```
 reporter.py           # entry point
 tra/                  # application package
-  prompts/            # editable Gemini prompt templates
+  ai/                 # TextGenerator protocol + provider adapters
+  prompts/            # editable AI prompt templates
 config.example.json   # configuration template
 .env.example          # API key template
 requirements.txt

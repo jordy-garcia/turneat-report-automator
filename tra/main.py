@@ -4,7 +4,7 @@ from tra.cleanup import prepare_output_dirs
 from tra.collector import collect_monthly_commits
 from tra.config import load_config
 from tra.dates import month_name_es
-from tra.gemini_client import GeminiClient
+from tra.ai import create_text_generator
 from tra.git_filters import parse_repo_entry, resolve_repo_filters
 from tra.hours import resolve_project_hours
 from tra.paraphrase import ExtraTaskParaphraser
@@ -57,9 +57,11 @@ def run(config_path: Path | None = None) -> None:
 
     prepare_output_dirs(config.debug_dir, config.reports_dir)
 
-    gemini = GeminiClient(config.api_key, settings.gemini_model)
-    summarizer = CommitSummarizer(gemini, settings, config)
-    paraphraser = ExtraTaskParaphraser(gemini, settings, config)
+    ai = create_text_generator(
+        settings.ai_provider, config.api_key, settings.summary_model
+    )
+    summarizer = CommitSummarizer(ai, settings, config)
+    paraphraser = ExtraTaskParaphraser(ai, settings, config)
 
     projects = collect_all_projects(config)
     month_label = month_name_es(settings.month)

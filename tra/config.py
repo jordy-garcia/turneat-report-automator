@@ -8,8 +8,13 @@ from typing import Any
 from dotenv import load_dotenv
 from zoneinfo import ZoneInfo
 
+from tra.ai.factory import SUPPORTED_PROVIDERS
 from tra.env_labels import EnvMapConfig, parse_env_map
 from tra.types import CommitDateBasis
+
+_PROVIDER_API_KEY_VARS: dict[str, tuple[str, ...]] = {
+    "gemini": ("GOOGLE_API_KEY", "GEMINI_API_KEY"),
+}
 
 
 @dataclass(frozen=True)
@@ -24,8 +29,9 @@ class ReportSettings:
     author_emails: list[str]
     exclude_pr_merge_commits: bool
     exclude_environment_sync_merges: bool
-    gemini_model: str
-    gemini_paraphrase_model: str
+    ai_provider: str
+    summary_model: str
+    paraphrase_model: str
     write_ai_debug_file: bool
     calendar_timezone: str
     commit_date_basis: CommitDateBasis
@@ -67,29 +73,44 @@ def _parse_date_basis(raw: Any) -> CommitDateBasis:
     return "author" if str(raw or "").lower() == "author" else "committer"
 
 
-def load_config(config_path: Path | None = None) -> AppConfig:
-    script_dir = Path(__file__).resolve().parent.parent
-    load_dotenv(script_dir / ".env")
-
-    api_key = ""
-    for var in ("GOOGLE_API_KEY", "GEMINI_API_KEY"):
-        value = os.environ.get(var, "").strip()
-        if value:
-            api_key = value
-            break
-    if not api_key:
+def _parse_ai_provider(raw: Any) -> str:
+    name = str(raw or "gemini").strip().lower() or "gemini"
+    if name not in SUPPORTED_PROVIDERS:
+        supported = ", ".join(SUPPORTED_PROVIDERS)
         print(
-            "ERROR: Missing Gemini API key. Set GOOGLE_API_KEY or GEMINI_API_KEY "
-            "in the environment or in .env (see .env.example).",
+            f"ERROR: Unknown ai_provider {name!r}. Supported: {supported}.",
             file=sys.stderr,
         )
         sys.exit(1)
+    return name
+
+
+def _resolve_api_key(provider: str) -> str:
+    for var in _PROVIDER_API_KEY_VARS.get(provider, ()):
+        value = os.environ.get(var, "").strip()
+        if value:
+            return value
+    vars_hint = " or ".join(_PROVIDER_API_KEY_VARS.get(provider, ()))
+    print(
+        f"ERROR: Missing API key for ai_provider {provider!r}. "
+        f"Set {vars_hint} in the environment or in .env (see .env.example).",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+
+def load_config(config_path: Path | None = None) -> AppConfig:
+    script_dir = Path(__file__).resolve().parent.parent
+    load_dotenv(script_dir / ".env")
 
     path = config_path or (script_dir / "config.json")
     with path.open(encoding="utf-8") as f:
         data = json.load(f)
 
     raw = data["report_settings"]
+    ai_provider = _parse_ai_provider(raw.get("ai_provider", "gemini"))
+    api_key = _resolve_api_key(ai_provider)
+
     author_emails = _parse_email_list(raw.get("author_emails"))
     if not author_emails:
         print(
@@ -115,11 +136,10 @@ def load_config(config_path: Path | None = None) -> AppConfig:
         exclude_environment_sync_merges=bool(
             raw.get("exclude_environment_sync_merges", True)
         ),
-        gemini_model=str(raw.get("gemini_model", "gemini-2.5-pro")).strip()
+        ai_provider=ai_provider,
+        summary_model=str(raw.get("summary_model", "gemini-2.5-pro")).strip()
         or "gemini-2.5-pro",
-        gemini_paraphrase_model=str(
-            raw.get("gemini_paraphrase_model", "gemini-2.5-flash")
-        ).strip()
+        paraphrase_model=str(raw.get("paraphrase_model", "gemini-2.5-flash")).strip()
         or "gemini-2.5-flash",
         write_ai_debug_file=bool(raw.get("write_ai_debug_file", True)),
         calendar_timezone=_parse_timezone(raw.get("calendar_timezone", "UTC")),

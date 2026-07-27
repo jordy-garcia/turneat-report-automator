@@ -21,7 +21,7 @@ def write_ai_context_debug(
         return
     path = _debug_path(config, settings, f"debug_ai_context_{safe_debug_filename(project_name)}")
     head = [
-        f"# Gemini context — project «{project_name}»",
+        f"# AI context — project «{project_name}»",
         f"# Model: {model}",
         f"# author_emails: {settings.author_emails}",
         f"# env_map: { {label: list(patterns) for label, patterns in settings.env_map.entries} }",

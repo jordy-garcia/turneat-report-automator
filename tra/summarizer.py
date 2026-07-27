@@ -1,7 +1,7 @@
+from tra.ai import TextGenerator
 from tra.config import AppConfig, ReportSettings
 from tra.debug_io import write_ai_context_debug
 from tra.dates import month_name_es
-from tra.gemini_client import GeminiClient
 from tra.prompt_loader import render_prompt
 from tra.report_parse import (
     commits_for_prompt,
@@ -19,7 +19,7 @@ from tra.types import (
 
 class CommitSummarizer:
     def __init__(
-        self, client: GeminiClient, settings: ReportSettings, config: AppConfig
+        self, client: TextGenerator, settings: ReportSettings, config: AppConfig
     ) -> None:
         self._client = client
         self._settings = settings
@@ -54,14 +54,14 @@ class CommitSummarizer:
             project_name,
             commits,
             prompt,
-            self._settings.gemini_model,
+            self._settings.summary_model,
         )
 
         try:
             raw = self._client.generate(prompt)
         except Exception:
             print(
-                "WARNING: Gemini summary failed; listing raw commit messages instead."
+                "WARNING: AI summary failed; listing raw commit messages instead."
             )
             return self._fallback_from_commits(commits)
 
@@ -69,7 +69,7 @@ class CommitSummarizer:
         if parsed is not None:
             return sanitize_report_sections(parsed)
 
-        print("WARNING: Invalid hierarchical JSON from Gemini; using plain text block.")
+        print("WARNING: Invalid hierarchical JSON from AI; using plain text block.")
         paragraphs = [p.strip() for p in raw.strip().split("\n\n") if p.strip()]
         if not paragraphs:
             paragraphs = [raw.strip()]
