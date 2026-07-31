@@ -107,8 +107,9 @@ def load_config(config_path: Path | None = None) -> AppConfig:
             default_label=str(raw.get("env_default", "")).strip() or None,
         ),
         total_hours=int(raw["total_hours"]),
-        month=int(raw["month"]),
-        year=int(raw["year"]),
+        # Period comes from the CLI; ignore legacy month/year in JSON if present.
+        month=0,
+        year=0,
         responsible_name=str(raw["responsible_name"]),
         author_emails=author_emails,
         exclude_pr_merge_commits=bool(raw.get("exclude_pr_merge_commits", False)),
