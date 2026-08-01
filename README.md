@@ -5,6 +5,7 @@ Generate monthly activity PDFs from your git commits. The tool filters commits b
 ## Requirements
 
 - Python **3.11+**
+- [uv](https://docs.astral.sh/uv/)
 - [Git](https://git-scm.com/) installed
 - Local clones of the repositories you want to report on (absolute paths in config)
 - A [Google AI Studio](https://aistudio.google.com/apikey) API key (Gemini)
@@ -15,16 +16,13 @@ Generate monthly activity PDFs from your git commits. The tool filters commits b
 git clone <your-repo-url>
 cd turneat-report-automator   # or your clone directory name
 
-python3 -m venv .venv
-source .venv/bin/activate     # Windows: .venv\Scripts\activate
-
-pip install -r requirements.txt
+uv sync
 
 cp config.example.json config.json
 cp .env.example .env
 ```
 
-Edit **`config.json`**: set the reporting month/year, your git `author_emails`, repository paths, and projects.
+Edit **`config.json`**: set your git `author_emails`, repository paths, and projects (stable settings). Report month/year and extra tasks are asked by the CLI each run — you do not need to edit them in config.
 
 Edit **`.env`**: set your API key:
 
@@ -41,7 +39,15 @@ git -C /path/to/your/repo log -1 --format='%ae'
 Run:
 
 ```bash
-python reporter.py
+uv run reporter
+```
+
+The CLI prompts for the report period as `MM-YYYY` (default: previous calendar month; Enter accepts it), then one line of extra tasks per project (`Category: description; Category2: description2`, empty = none).
+
+Skip the period prompt with flags:
+
+```bash
+uv run reporter --month 7 --year 2026
 ```
 
 PDFs are written to `reports/`. Debug files (if enabled) go to `debug/`. Each run clears both folders first.
@@ -54,7 +60,6 @@ Copy `config.example.json` to `config.json`. Two top-level sections:
 
 | Field | Description |
 |-------|-------------|
-| `month`, `year` | Calendar month to report on |
 | `responsible_name` | Shown on the PDF header |
 | `author_emails` | **Required.** Only commits where `commit.author.email` matches (case-insensitive) |
 | `calendar_timezone` | Timezone for month boundaries (e.g. `America/Mexico_City`) |
@@ -79,7 +84,8 @@ Each project becomes one PDF: `reports/Report_<name>_<month>_<year>.pdf`.
 | `name` | Project title on the PDF |
 | `repos` | List of local repo paths (string) or objects with overrides (see below) |
 | `hours` | Optional fixed hours for this project (when `report_hours` is `true`) |
-| `extra_tasks` | Optional non-git tasks (`category` + `description`), paraphrased by Gemini |
+
+**Period and extra tasks** come from the CLI each run (not from `config.json`). Legacy `month` / `year` / `extra_tasks` keys in an old config are ignored.
 
 **Environment mapping** (`env_map`): each key is the tag shown on commits and PDF bullets; each value is a list of branch names to match (case-insensitive, compared to the branch path and its last segment). Order matters: the first matching environment wins, so list higher-priority environments first (e.g. `prod` before `dev`).
 
@@ -131,8 +137,6 @@ Per-repo `author_emails` overrides the global list for that repository only.
       "dev": ["development", "develop", "dev", "test"]
     },
     "total_hours": 160,
-    "month": 3,
-    "year": 2026,
     "responsible_name": "Jane Doe",
     "author_emails": ["jane@company.com"],
     "calendar_timezone": "America/Mexico_City",
@@ -147,22 +151,16 @@ Per-repo `author_emails` overrides the global list for that repository only.
     {
       "name": "Backend",
       "hours": 100,
-      "repos": ["/Users/you/work/backend"],
-      "extra_tasks": []
+      "repos": ["/Users/you/work/backend"]
     },
     {
       "name": "Mobile",
-      "repos": ["/Users/you/work/mobile-app"],
-      "extra_tasks": [
-        {
-          "category": "Planning",
-          "description": "Sprint planning and backlog grooming"
-        }
-      ]
+      "repos": ["/Users/you/work/mobile-app"]
     }
   ]
 }
 ```
+
 
 ## Customizing AI prompts
 
@@ -188,13 +186,15 @@ Edit these files to change tone or rules without changing Python code.
 ## Project layout
 
 ```
-reporter.py           # entry point
+pyproject.toml        # project metadata, deps, console script
+uv.lock               # locked dependencies
 tra/                  # application package
   prompts/            # editable Gemini prompt templates
 config.example.json   # configuration template
 .env.example          # API key template
-requirements.txt
 ```
+
+This repo uses a flat `tra/` package at the project root rather than a `src/` layout. It started as a single-script tool with pip/`requirements.txt`; when migrating to uv we kept that structure on purpose instead of reshuffling directories.
 
 ## License
 

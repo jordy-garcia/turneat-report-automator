@@ -1,8 +1,6 @@
-from pathlib import Path
-
 from tra.cleanup import prepare_output_dirs
 from tra.collector import collect_monthly_commits
-from tra.config import load_config
+from tra.config import AppConfig
 from tra.dates import month_name_es
 from tra.gemini_client import GeminiClient
 from tra.git_filters import parse_repo_entry, resolve_repo_filters
@@ -13,8 +11,12 @@ from tra.summarizer import CommitSummarizer
 from tra.types import ProjectData
 
 
-def collect_all_projects(config) -> list[ProjectData]:
+def collect_all_projects(
+    config: AppConfig,
+    extras_by_project: dict[str, list[dict]] | None = None,
+) -> list[ProjectData]:
     settings = config.settings
+    extras_by_project = extras_by_project or {}
     results: list[ProjectData] = []
 
     for project in config.projects:
@@ -37,13 +39,14 @@ def collect_all_projects(config) -> list[ProjectData]:
 
         raw_hours = project.get("hours")
         manual_hours = max(0, int(raw_hours)) if raw_hours is not None else None
+        name = project["name"]
 
         results.append(
             ProjectData(
-                name=project["name"],
+                name=name,
                 commits=all_commits,
                 count=len(all_commits),
-                extras=project.get("extra_tasks", []),
+                extras=extras_by_project.get(name, []),
                 manual_hours=manual_hours,
             )
         )
@@ -51,9 +54,17 @@ def collect_all_projects(config) -> list[ProjectData]:
     return results
 
 
-def run(config_path: Path | None = None) -> None:
-    config = load_config(config_path)
+def run(
+    config: AppConfig,
+    *,
+    extras_by_project: dict[str, list[dict]] | None = None,
+) -> None:
     settings = config.settings
+    if settings.month < 1 or settings.month > 12 or settings.year < 1970:
+        raise ValueError(
+            "Report period is not set. Use the CLI (uv run reporter) so month/year "
+            "are resolved before run()."
+        )
 
     prepare_output_dirs(config.debug_dir, config.reports_dir)
 
@@ -61,7 +72,7 @@ def run(config_path: Path | None = None) -> None:
     summarizer = CommitSummarizer(gemini, settings, config)
     paraphraser = ExtraTaskParaphraser(gemini, settings, config)
 
-    projects = collect_all_projects(config)
+    projects = collect_all_projects(config, extras_by_project=extras_by_project)
     month_label = month_name_es(settings.month)
     date_label = (
         "author date (when the change was written)"
