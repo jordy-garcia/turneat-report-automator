@@ -9,8 +9,6 @@
       "dev": ["development", "develop", "dev"]
     },
     "total_hours": 160,
-    "month": 1,
-    "year": 2026,
     "responsible_name": "Full Name",
     "author_emails": ["you@company.com"],
     "exclude_pr_merge_commits": true,
@@ -25,13 +23,7 @@
     {
       "name": "ExampleProject",
       "hours": 80,
-      "repos": ["/absolute/path/to/repository-one"],
-      "extra_tasks": [
-        {
-          "category": "Administration",
-          "description": "Brief description of an optional extra task."
-        }
-      ]
+      "repos": ["/absolute/path/to/repository-one"]
     },
     {
       "name": "AnotherProject",
@@ -42,8 +34,7 @@
           "author_emails": ["you@company.com"],
           "exclude_pr_merge_commits": true
         }
-      ],
-      "extra_tasks": []
+      ]
     }
   ]
 }

@@ -16,3 +16,7 @@ config.json
 # Generated output
 debug/
 reports/
+
+# Local agent scratch (SDD briefs/reports, etc.)
+.superpowers/
+docs/*
