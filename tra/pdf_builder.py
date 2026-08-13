@@ -1,5 +1,7 @@
 """PDF report layout for monthly activity reports."""
 
+from __future__ import annotations
+
 from fpdf import FPDF
 from fpdf.enums import XPos, YPos
 
@@ -7,9 +9,26 @@ from tra.dates import month_name_es
 from tra.types import EnvLabel, ExtraTaskLine, ReportSection
 
 _PDF_NEXT_LINE = {"new_x": XPos.LMARGIN, "new_y": YPos.NEXT}
-HOURS_GRAY = (120, 120, 120)
-# Fixed right column for per-task hours (mm). Keeps text from colliding with hours.
+
+# Palette — navy + teal (professional, not purple/cream defaults)
+_NAVY = (18, 48, 78)
+_TEAL = (26, 148, 138)
+_TEAL_SOFT = (232, 245, 243)
+_INK = (28, 34, 42)
+_MUTED = (105, 115, 128)
+_RULE = (210, 218, 224)
+_HOURS = (120, 128, 138)
+_WHITE = (255, 255, 255)
+
+_ENV_CHIP: dict[str, tuple[tuple[int, int, int], tuple[int, int, int]]] = {
+    "prod": ((196, 72, 72), _WHITE),
+    "stage": ((196, 138, 42), _WHITE),
+    "dev": ((42, 118, 178), _WHITE),
+}
+_ENV_CHIP_FALLBACK = ((110, 120, 132), _WHITE)
+
 _HOURS_COL_W = 18.0
+_CHIP_H = 4.6
 
 
 def format_hours(value: float) -> str:
@@ -18,13 +37,78 @@ def format_hours(value: float) -> str:
     return f"{value:g}"
 
 
-def bullet_line(text: str, env: EnvLabel, *, tag_environment: bool) -> str:
+def _clean_bullet_text(text: str) -> str:
     t = text.strip()
     if t.startswith(("•", "·", "-", "*")):
         t = t[1:].lstrip(" \t").strip()
-    if tag_environment:
-        return f"- **{env}** {t}"
-    return f"- {t}"
+    return t
+
+
+def _env_colors(env: str) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
+    return _ENV_CHIP.get(env.strip().lower(), _ENV_CHIP_FALLBACK)
+
+
+class ReportPDF(FPDF):
+    """FPDF with a thin teal footer rule + page number."""
+
+    def footer(self) -> None:
+        self.set_y(-14)
+        self.set_draw_color(*_TEAL)
+        self.set_line_width(0.35)
+        self.line(self.l_margin, self.get_y(), self.w - self.r_margin, self.get_y())
+        self.ln(2)
+        self.set_font("Helvetica", "", 8)
+        self.set_text_color(*_MUTED)
+        self.cell(0, 5, f"{self.page_no()}", align="R")
+        self.set_text_color(*_INK)
+
+
+def _draw_top_band(pdf: FPDF) -> None:
+    pdf.set_fill_color(*_NAVY)
+    pdf.rect(0, 0, pdf.w, 8, style="F")
+    pdf.set_fill_color(*_TEAL)
+    pdf.rect(0, 8, pdf.w, 1.6, style="F")
+    pdf.set_y(14)
+
+
+def _draw_section_heading(pdf: FPDF, title: str, *, pt: int = 12) -> None:
+    y = pdf.get_y()
+    pdf.set_fill_color(*_TEAL)
+    pdf.rect(pdf.l_margin, y + 0.8, 1.8, pt * 0.55, style="F")
+    pdf.set_xy(pdf.l_margin + 4, y)
+    pdf.set_font("Helvetica", "B", pt)
+    pdf.set_text_color(*_NAVY)
+    pdf.multi_cell(pdf.epw - 4, pt * 0.62, title, **_PDF_NEXT_LINE)
+    pdf.set_text_color(*_INK)
+    pdf.ln(1.5)
+    # Soft rule under chapter titles
+    pdf.set_draw_color(*_RULE)
+    pdf.set_line_width(0.25)
+    y2 = pdf.get_y()
+    pdf.line(pdf.l_margin, y2, pdf.w - pdf.r_margin, y2)
+    pdf.ln(3)
+
+
+def _draw_subsection_title(pdf: FPDF, title: str, *, pt: int = 10) -> None:
+    pdf.set_font("Helvetica", "B", pt)
+    pdf.set_text_color(*_TEAL)
+    pdf.multi_cell(0, pt * 0.58, title, **_PDF_NEXT_LINE)
+    pdf.set_text_color(*_INK)
+    pdf.ln(1.4)
+
+
+def _draw_env_chip(pdf: FPDF, env: str, *, x: float, y: float) -> float:
+    """Draw colored env chip; returns width used."""
+    label = env.strip().upper()[:8] or "ENV"
+    bg, fg = _env_colors(env)
+    pdf.set_font("Helvetica", "B", 7)
+    width = pdf.get_string_width(label) + 3.2
+    pdf.set_fill_color(*bg)
+    pdf.set_text_color(*fg)
+    pdf.set_xy(x, y + 0.35)
+    pdf.cell(width, _CHIP_H, label, fill=True, align="C")
+    pdf.set_text_color(*_INK)
+    return width
 
 
 def _draw_hours_at(
@@ -34,63 +118,56 @@ def _draw_hours_at(
     x: float,
     y: float,
     width: float,
-    body_pt: int,
     line_h: float,
 ) -> None:
-    """Draw gray hours in the reserved column at the first line of the item."""
     pdf.set_xy(x, y)
-    pdf.set_text_color(*HOURS_GRAY)
-    pdf.set_font("Helvetica", "", max(body_pt - 1, 7))
+    pdf.set_text_color(*_HOURS)
+    pdf.set_font("Helvetica", "", 8)
     pdf.cell(width, line_h, f"{format_hours(hours)} h", align="R")
-    pdf.set_text_color(0, 0, 0)
-    pdf.set_font("Helvetica", "", body_pt)
+    pdf.set_text_color(*_INK)
 
 
-def _write_text_block_with_optional_hours(
+def _write_bullet_row(
     pdf: FPDF,
-    text: str,
-    hours: float | None,
     *,
+    text: str,
+    env: EnvLabel,
+    hours: float | None,
+    tag_environment: bool,
     body_pt: int,
-    line_h: float,
-    text_width: float,
-    x_left: float,
-    markdown: bool = False,
-    gap_after: float = 2.0,
+    indent: float,
 ) -> None:
-    """
-    Write a wrapping text block; if hours are set, pin them to the top-right
-    of the block without moving the cursor back into the text.
-    """
+    line_h = body_pt * 0.65
+    x0 = pdf.l_margin + indent
     y0 = pdf.get_y()
     hours_w = _HOURS_COL_W if hours is not None else 0.0
-    content_w = text_width - hours_w
+    usable = pdf.epw - indent - hours_w
 
-    pdf.set_xy(x_left, y0)
-    pdf.multi_cell(
-        content_w,
-        line_h,
-        text,
-        markdown=markdown,
-        **_PDF_NEXT_LINE,
-    )
+    cursor_x = x0
+    if tag_environment:
+        chip_w = _draw_env_chip(pdf, env, x=x0, y=y0)
+        cursor_x = x0 + chip_w + 2.0
+
+    body = _clean_bullet_text(text)
+    text_w = max(usable - (cursor_x - x0), 20.0)
+    pdf.set_xy(cursor_x, y0)
+    pdf.set_font("Helvetica", "", body_pt)
+    pdf.set_text_color(*_INK)
+    pdf.multi_cell(text_w, line_h, body, **_PDF_NEXT_LINE)
     y_after = pdf.get_y()
 
     if hours is not None:
-        hours_x = x_left + content_w
         _draw_hours_at(
             pdf,
             hours=hours,
-            x=hours_x,
+            x=pdf.l_margin + pdf.epw - hours_w,
             y=y0,
             width=hours_w,
-            body_pt=body_pt,
             line_h=line_h,
         )
         pdf.set_y(y_after)
 
-    if gap_after:
-        pdf.ln(gap_after)
+    pdf.ln(2.4)
 
 
 def write_report_hierarchy(
@@ -101,47 +178,33 @@ def write_report_hierarchy(
     main_pt: int = 12,
     sub_pt: int = 10,
     body_pt: int = 9,
-    indent: float = 6,
+    indent: float = 3,
 ) -> None:
-    line_h = body_pt * 0.65
     for sec_idx, sec in enumerate(sections):
         if sec_idx > 0:
-            pdf.ln(5)
+            pdf.ln(4)
         main_title = sec["title"].strip()
         if main_title:
-            pdf.set_font("Helvetica", "B", main_pt)
-            pdf.multi_cell(0, main_pt * 0.62, main_title, **_PDF_NEXT_LINE)
-            pdf.ln(2.5)
+            _draw_section_heading(pdf, main_title, pt=main_pt)
 
         for sub in sec["subsections"]:
             sub_title = sub["title"].strip()
             if sub_title and not sub_title.endswith(":"):
                 sub_title = f"{sub_title}:"
-            pdf.set_font("Helvetica", "B", sub_pt)
-            pdf.multi_cell(0, sub_pt * 0.6, sub_title, **_PDF_NEXT_LINE)
-            pdf.ln(1.6)
+            if sub_title:
+                _draw_subsection_title(pdf, sub_title, pt=sub_pt)
 
-            pdf.set_font("Helvetica", "", body_pt)
-            x_left = pdf.l_margin + indent
-            text_width = pdf.epw - indent
             for bullet in sub["bullets"]:
-                hours = bullet.get("hours")
-                _write_text_block_with_optional_hours(
+                _write_bullet_row(
                     pdf,
-                    bullet_line(
-                        bullet["text"],
-                        bullet["env"],
-                        tag_environment=tag_environment,
-                    ),
-                    hours,
+                    text=bullet["text"],
+                    env=bullet["env"],
+                    hours=bullet.get("hours"),
+                    tag_environment=tag_environment,
                     body_pt=body_pt,
-                    line_h=line_h,
-                    text_width=text_width,
-                    x_left=x_left,
-                    markdown=True,
-                    gap_after=2.2,
+                    indent=indent,
                 )
-            pdf.ln(1.5)
+            pdf.ln(1.2)
 
 
 def write_extra_task_lines(
@@ -151,39 +214,50 @@ def write_extra_task_lines(
     title_pt: int = 10,
     body_pt: int = 9,
 ) -> None:
-    line_h = body_pt * 0.62
+    line_h = body_pt * 0.65
     for line in lines:
         text = line["text"]
         hours = line.get("hours")
-        sep = ": "
-        if sep in text:
-            title, body = text.split(sep, 1)
+        y0 = pdf.get_y()
+        hours_w = _HOURS_COL_W if hours is not None else 0.0
+        content_w = pdf.epw - 4 - hours_w
+
+        if ": " in text:
+            title, body = text.split(": ", 1)
+            pdf.set_xy(pdf.l_margin + 4, y0)
             pdf.set_font("Helvetica", "B", title_pt)
-            pdf.multi_cell(0, title_pt * 0.58, title.strip(), **_PDF_NEXT_LINE)
-            pdf.ln(0.8)
+            pdf.set_text_color(*_NAVY)
+            pdf.multi_cell(content_w, title_pt * 0.55, title.strip(), **_PDF_NEXT_LINE)
+
+            pdf.set_x(pdf.l_margin + 4)
             pdf.set_font("Helvetica", "", body_pt)
-            _write_text_block_with_optional_hours(
-                pdf,
-                body.strip(),
-                hours,
-                body_pt=body_pt,
-                line_h=line_h,
-                text_width=pdf.epw,
-                x_left=pdf.l_margin,
-                gap_after=3.0,
-            )
+            pdf.set_text_color(*_INK)
+            pdf.multi_cell(content_w, line_h, body.strip(), **_PDF_NEXT_LINE)
+            y_after = pdf.get_y()
+            hours_line_h = title_pt * 0.55
         else:
+            pdf.set_xy(pdf.l_margin + 4, y0)
             pdf.set_font("Helvetica", "", body_pt)
-            _write_text_block_with_optional_hours(
+            pdf.set_text_color(*_INK)
+            pdf.multi_cell(content_w, line_h, text, **_PDF_NEXT_LINE)
+            y_after = pdf.get_y()
+            hours_line_h = line_h
+
+        pdf.set_fill_color(*_TEAL)
+        pdf.rect(pdf.l_margin, y0, 1.6, max(y_after - y0, 6), style="F")
+
+        if hours is not None:
+            _draw_hours_at(
                 pdf,
-                text,
-                hours,
-                body_pt=body_pt,
-                line_h=line_h,
-                text_width=pdf.epw,
-                x_left=pdf.l_margin,
-                gap_after=3.0,
+                hours=hours,
+                x=pdf.l_margin + pdf.epw - hours_w,
+                y=y0,
+                width=hours_w,
+                line_h=hours_line_h,
             )
+
+        pdf.set_y(y_after)
+        pdf.ln(3.2)
 
 
 def build_project_pdf(
@@ -199,30 +273,42 @@ def build_project_pdf(
     tag_environment: bool = True,
 ) -> None:
     month_label = month_name_es(month)
-    pdf = FPDF()
+    pdf = ReportPDF()
+    pdf.set_auto_page_break(auto=True, margin=18)
     pdf.add_page()
-    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.set_text_color(*_INK)
 
-    pdf.set_font("Helvetica", "B", 14)
-    pdf.cell(0, 9, f"Informe de actividad: {project_name}", **_PDF_NEXT_LINE)
-    pdf.ln(1)
-    pdf.set_font("Helvetica", "", 11)
-    pdf.cell(0, 6.5, f"Período: {month_label} {year}", **_PDF_NEXT_LINE)
-    pdf.cell(0, 6.5, responsible_name, **_PDF_NEXT_LINE)
-    if assigned_hours is not None:
-        pdf.cell(0, 6.5, f"Horas: {assigned_hours}", **_PDF_NEXT_LINE)
-    pdf.ln(6)
+    _draw_top_band(pdf)
 
-    pdf.set_font("Helvetica", "B", 12)
-    pdf.cell(0, 8, "Desarrollo y soporte técnico", **_PDF_NEXT_LINE)
+    # Title
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.set_text_color(*_NAVY)
+    pdf.multi_cell(0, 8, project_name, **_PDF_NEXT_LINE)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.set_text_color(*_MUTED)
+    pdf.cell(0, 5.5, "Informe de actividad mensual", **_PDF_NEXT_LINE)
     pdf.ln(2)
+
+    # Meta strip
+    pdf.set_fill_color(*_TEAL_SOFT)
+    meta_y = pdf.get_y()
+    pdf.rect(pdf.l_margin, meta_y, pdf.epw, 12, style="F")
+    pdf.set_xy(pdf.l_margin + 3, meta_y + 2.2)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(*_INK)
+    meta_bits = [f"Período: {month_label} {year}", responsible_name]
+    if assigned_hours is not None:
+        meta_bits.append(f"Horas: {assigned_hours}")
+    pdf.cell(pdf.epw - 6, 7, "  ·  ".join(meta_bits), **_PDF_NEXT_LINE)
+    pdf.set_y(meta_y + 14)
+
+    # Technical chapter
+    _draw_section_heading(pdf, "Desarrollo y soporte técnico", pt=12)
     write_report_hierarchy(pdf, sections, tag_environment=tag_environment)
-    pdf.ln(4)
+    pdf.ln(3)
 
     if extra_lines:
-        pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(0, 8, "Gestión administrativa y soporte adicional", **_PDF_NEXT_LINE)
-        pdf.ln(2)
+        _draw_section_heading(pdf, "Gestión administrativa y soporte adicional", pt=12)
         write_extra_task_lines(pdf, extra_lines)
 
     pdf.output(output_path)
