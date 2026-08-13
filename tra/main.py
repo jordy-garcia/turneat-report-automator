@@ -5,10 +5,11 @@ from tra.dates import month_name_es
 from tra.gemini_client import GeminiClient
 from tra.git_filters import parse_repo_entry, resolve_repo_filters
 from tra.hours import resolve_project_hours
+from tra.hours_alloc import TaskHoursAllocator
 from tra.paraphrase import ExtraTaskParaphraser
 from tra.pdf_builder import build_project_pdf
 from tra.summarizer import CommitSummarizer
-from tra.types import ProjectData
+from tra.types import ExtraTaskLine, ProjectData
 
 
 def collect_all_projects(
@@ -71,6 +72,7 @@ def run(
     gemini = GeminiClient(config.api_key, settings.gemini_model)
     summarizer = CommitSummarizer(gemini, settings, config)
     paraphraser = ExtraTaskParaphraser(gemini, settings, config)
+    allocator = TaskHoursAllocator(gemini, settings, config)
 
     projects = collect_all_projects(config, extras_by_project=extras_by_project)
     month_label = month_name_es(settings.month)
@@ -98,6 +100,17 @@ def run(
         extra_lines = paraphraser.paraphrase(
             data["extras"], project_name=data["name"]
         )
+        extra_structs: list[ExtraTaskLine] = [{"text": line} for line in extra_lines]
+        hours = project_hours[idx]
+        if (
+            settings.report_hours
+            and settings.show_task_hours
+            and hours is not None
+            and hours > 0
+        ):
+            sections, extra_structs = allocator.allocate(
+                data["name"], sections, [e["text"] for e in extra_structs], hours
+            )
         output = (
             config.reports_dir
             / f"Report_{data['name']}_{month_label}_{settings.year}.pdf"
@@ -109,7 +122,7 @@ def run(
             year=settings.year,
             assigned_hours=project_hours[idx],
             sections=sections,
-            extra_lines=extra_lines,
+            extra_lines=extra_structs,
             output_path=str(output),
             tag_environment=settings.tag_environment,
         )

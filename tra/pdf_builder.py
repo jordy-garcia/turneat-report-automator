@@ -2,9 +2,36 @@ from fpdf import FPDF
 from fpdf.enums import XPos, YPos
 
 from tra.dates import month_name_es
-from tra.types import EnvLabel, ReportSection
+from tra.types import EnvLabel, ExtraTaskLine, ReportSection
 
 _PDF_NEXT_LINE = {"new_x": XPos.LMARGIN, "new_y": YPos.NEXT}
+HOURS_GRAY = (140, 140, 140)
+
+
+def format_hours(value: float) -> str:
+    if float(value).is_integer():
+        return str(int(value))
+    return f"{value:g}"
+
+
+def _append_hours(
+    pdf: FPDF,
+    hours: float,
+    *,
+    body_pt: int,
+) -> None:
+    pdf.set_text_color(*HOURS_GRAY)
+    pdf.set_font("Helvetica", "", body_pt - 1)
+    hours_h = (body_pt - 1) * 0.52
+    pdf.cell(
+        0,
+        hours_h,
+        f"  {format_hours(hours)} h",
+        new_x=XPos.LMARGIN,
+        new_y=YPos.NEXT,
+    )
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font("Helvetica", "", body_pt)
 
 
 def bullet_line(text: str, env: EnvLabel, *, tag_environment: bool) -> str:
@@ -41,38 +68,68 @@ def write_report_hierarchy(
             pdf.ln(0.5)
             pdf.set_font("Helvetica", "", body_pt)
             inner_w = pdf.epw - indent
+            line_h = body_pt * 0.52
             for bullet in sub["bullets"]:
                 pdf.set_x(pdf.l_margin + indent)
+                hours = bullet.get("hours")
+                next_line = (
+                    {"new_x": XPos.RIGHT, "new_y": YPos.TOP}
+                    if hours is not None
+                    else _PDF_NEXT_LINE
+                )
                 pdf.multi_cell(
                     inner_w,
-                    body_pt * 0.52,
+                    line_h,
                     bullet_line(
                         bullet["text"], bullet["env"], tag_environment=tag_environment
                     ),
                     markdown=True,
-                    **_PDF_NEXT_LINE,
+                    **next_line,
                 )
+                if hours is not None:
+                    _append_hours(pdf, hours, body_pt=body_pt)
             pdf.ln(2)
+
+
+def _write_body_with_hours(
+    pdf: FPDF,
+    text: str,
+    hours: float | None,
+    *,
+    body_pt: int,
+    markdown: bool = False,
+) -> None:
+    line_h = body_pt * 0.52
+    next_line = (
+        {"new_x": XPos.RIGHT, "new_y": YPos.TOP}
+        if hours is not None
+        else _PDF_NEXT_LINE
+    )
+    pdf.multi_cell(0, line_h, text, markdown=markdown, **next_line)
+    if hours is not None:
+        _append_hours(pdf, hours, body_pt=body_pt)
 
 
 def write_extra_task_lines(
     pdf: FPDF,
-    lines: list[str],
+    lines: list[ExtraTaskLine],
     *,
     title_pt: int = 10,
     body_pt: int = 9,
 ) -> None:
     for line in lines:
+        text = line["text"]
+        hours = line.get("hours")
         sep = ": "
-        if sep in line:
-            title, body = line.split(sep, 1)
+        if sep in text:
+            title, body = text.split(sep, 1)
             pdf.set_font("Helvetica", "B", title_pt)
             pdf.multi_cell(0, title_pt * 0.55, title.strip(), **_PDF_NEXT_LINE)
             pdf.set_font("Helvetica", "", body_pt)
-            pdf.multi_cell(0, body_pt * 0.52, body.strip(), **_PDF_NEXT_LINE)
+            _write_body_with_hours(pdf, body.strip(), hours, body_pt=body_pt)
         else:
             pdf.set_font("Helvetica", "", body_pt)
-            pdf.multi_cell(0, body_pt * 0.52, line, **_PDF_NEXT_LINE)
+            _write_body_with_hours(pdf, text, hours, body_pt=body_pt)
         pdf.ln(2.5)
 
 
@@ -84,7 +141,7 @@ def build_project_pdf(
     year: int,
     assigned_hours: int | None,
     sections: list[ReportSection],
-    extra_lines: list[str],
+    extra_lines: list[ExtraTaskLine],
     output_path: str,
     tag_environment: bool = True,
 ) -> None:
