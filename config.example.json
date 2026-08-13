@@ -1,6 +1,7 @@
 {
   "report_settings": {
     "report_hours": true,
+    "show_task_hours": false,
     "tag_environment": true,
     "env_default": "dev",
     "env_map": {

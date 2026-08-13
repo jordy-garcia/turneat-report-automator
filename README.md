@@ -67,6 +67,7 @@ Copy `config.example.json` to `config.json`. Two top-level sections:
 | `exclude_pr_merge_commits` | Skip typical PR/MR merge commits |
 | `exclude_environment_sync_merges` | Skip merges from `development` / `main` into feature branches |
 | `report_hours` | `true`: compute and print hours on PDFs; `false`: omit hours entirely |
+| `show_task_hours` | When `report_hours` is true: show AI-allocated hours on each bullet/extra (gray, smaller). Default `false`. |
 | `tag_environment` | `true` (default): show environment label on each bullet in the PDF; `false`: plain bullets without labels |
 | `env_map` | Maps environment names to branch name patterns (see below) |
 | `env_default` | Label when no branch pattern matches (default: `dev`) |
@@ -106,6 +107,7 @@ The same mapping is used everywhere: each commit line sent to Gemini is prefixed
 
 - Projects with `hours` use that value.
 - Projects without `hours` share the remainder of `total_hours` (after manual assignments), proportional to commit count.
+- With `show_task_hours: true`, Gemini distributes each project's assigned total across bullets and extras after summarizing and paraphrasing (uses `gemini_paraphrase_model`).
 
 **Repo entry** — either a path string or an object:
 
@@ -129,6 +131,7 @@ Per-repo `author_emails` overrides the global list for that repository only.
 {
   "report_settings": {
     "report_hours": true,
+    "show_task_hours": false,
     "tag_environment": true,
     "env_default": "dev",
     "env_map": {
