@@ -63,6 +63,12 @@ class ReportPDF(FPDF):
         self.set_text_color(*_INK)
 
 
+def _ensure_space(pdf: FPDF, height: float) -> None:
+    """Start a new page if the remaining space cannot fit `height` mm."""
+    if pdf.get_y() + height > pdf.page_break_trigger:
+        pdf.add_page()
+
+
 def _draw_top_band(pdf: FPDF) -> None:
     pdf.set_fill_color(*_NAVY)
     pdf.rect(0, 0, pdf.w, 8, style="F")
@@ -72,6 +78,7 @@ def _draw_top_band(pdf: FPDF) -> None:
 
 
 def _draw_section_heading(pdf: FPDF, title: str, *, pt: int = 12) -> None:
+    _ensure_space(pdf, pt * 0.62 + 18)
     y = pdf.get_y()
     pdf.set_fill_color(*_TEAL)
     pdf.rect(pdf.l_margin, y + 0.8, 1.8, pt * 0.55, style="F")
@@ -90,6 +97,7 @@ def _draw_section_heading(pdf: FPDF, title: str, *, pt: int = 12) -> None:
 
 
 def _draw_subsection_title(pdf: FPDF, title: str, *, pt: int = 10) -> None:
+    _ensure_space(pdf, pt * 0.58 + 14)
     pdf.set_font("Helvetica", "B", pt)
     pdf.set_text_color(*_TEAL)
     pdf.multi_cell(0, pt * 0.58, title, **_PDF_NEXT_LINE)
@@ -137,7 +145,14 @@ def _write_bullet_row(
     body_pt: int,
     indent: float,
 ) -> None:
+    body = _clean_bullet_text(text)
+    if not body:
+        return
+
     line_h = body_pt * 0.65
+    # Chip + at least two text lines must stay together (avoid orphan env tags).
+    _ensure_space(pdf, _CHIP_H + line_h * 2 + 6)
+
     x0 = pdf.l_margin + indent
     y0 = pdf.get_y()
     hours_w = _HOURS_COL_W if hours is not None else 0.0
@@ -148,7 +163,6 @@ def _write_bullet_row(
         chip_w = _draw_env_chip(pdf, env, x=x0, y=y0)
         cursor_x = x0 + chip_w + 2.0
 
-    body = _clean_bullet_text(text)
     text_w = max(usable - (cursor_x - x0), 20.0)
     pdf.set_xy(cursor_x, y0)
     pdf.set_font("Helvetica", "", body_pt)
@@ -180,21 +194,34 @@ def write_report_hierarchy(
     body_pt: int = 9,
     indent: float = 3,
 ) -> None:
-    for sec_idx, sec in enumerate(sections):
-        if sec_idx > 0:
-            pdf.ln(4)
+    rendered_sections = 0
+    for sec in sections:
         main_title = sec["title"].strip()
-        if main_title:
-            _draw_section_heading(pdf, main_title, pt=main_pt)
-
+        # Keep only subsections that still have visible bullets.
+        live_subs: list[tuple[str, list]] = []
         for sub in sec["subsections"]:
             sub_title = sub["title"].strip()
             if sub_title and not sub_title.endswith(":"):
                 sub_title = f"{sub_title}:"
+            bullets = [
+                b
+                for b in sub["bullets"]
+                if _clean_bullet_text(b.get("text", ""))
+            ]
+            if bullets:
+                live_subs.append((sub_title, bullets))
+        if not live_subs:
+            continue
+
+        if rendered_sections > 0:
+            pdf.ln(4)
+        if main_title:
+            _draw_section_heading(pdf, main_title, pt=main_pt)
+
+        for sub_title, bullets in live_subs:
             if sub_title:
                 _draw_subsection_title(pdf, sub_title, pt=sub_pt)
-
-            for bullet in sub["bullets"]:
+            for bullet in bullets:
                 _write_bullet_row(
                     pdf,
                     text=bullet["text"],
@@ -205,6 +232,7 @@ def write_report_hierarchy(
                     indent=indent,
                 )
             pdf.ln(1.2)
+        rendered_sections += 1
 
 
 def write_extra_task_lines(
@@ -216,20 +244,28 @@ def write_extra_task_lines(
 ) -> None:
     line_h = body_pt * 0.65
     for line in lines:
-        text = line["text"]
+        text = (line.get("text") or "").strip()
+        if not text:
+            continue
         hours = line.get("hours")
+        _ensure_space(pdf, title_pt * 0.55 + line_h * 2 + 8)
         y0 = pdf.get_y()
         hours_w = _HOURS_COL_W if hours is not None else 0.0
         content_w = pdf.epw - 4 - hours_w
 
         if ": " in text:
             title, body = text.split(": ", 1)
+            if not body.strip():
+                body = title
+                title = ""
             pdf.set_xy(pdf.l_margin + 4, y0)
-            pdf.set_font("Helvetica", "B", title_pt)
-            pdf.set_text_color(*_NAVY)
-            pdf.multi_cell(content_w, title_pt * 0.55, title.strip(), **_PDF_NEXT_LINE)
-
-            pdf.set_x(pdf.l_margin + 4)
+            if title.strip():
+                pdf.set_font("Helvetica", "B", title_pt)
+                pdf.set_text_color(*_NAVY)
+                pdf.multi_cell(
+                    content_w, title_pt * 0.55, title.strip(), **_PDF_NEXT_LINE
+                )
+                pdf.set_x(pdf.l_margin + 4)
             pdf.set_font("Helvetica", "", body_pt)
             pdf.set_text_color(*_INK)
             pdf.multi_cell(content_w, line_h, body.strip(), **_PDF_NEXT_LINE)
@@ -302,13 +338,13 @@ def build_project_pdf(
     pdf.cell(pdf.epw - 6, 7, "  ·  ".join(meta_bits), **_PDF_NEXT_LINE)
     pdf.set_y(meta_y + 14)
 
-    # Technical chapter
-    _draw_section_heading(pdf, "Desarrollo y soporte técnico", pt=12)
+    # Content sections from Gemini (no empty wrapper chapter).
     write_report_hierarchy(pdf, sections, tag_environment=tag_environment)
-    pdf.ln(3)
 
-    if extra_lines:
+    visible_extras = [e for e in extra_lines if (e.get("text") or "").strip()]
+    if visible_extras:
+        pdf.ln(3)
         _draw_section_heading(pdf, "Gestión administrativa y soporte adicional", pt=12)
-        write_extra_task_lines(pdf, extra_lines)
+        write_extra_task_lines(pdf, visible_extras)
 
     pdf.output(output_path)
