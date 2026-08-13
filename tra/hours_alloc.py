@@ -1,6 +1,12 @@
+import copy
+import json
 from typing import Literal, TypedDict
 
-from tra.types import ReportSection
+from tra.config import AppConfig, ReportSettings
+from tra.gemini_client import GeminiClient
+from tra.json_utils import strip_json_fence
+from tra.prompt_loader import render_prompt
+from tra.types import ExtraTaskLine, ReportSection
 
 
 class AllocItem(TypedDict):
@@ -98,3 +104,100 @@ def normalize_hours(
             break
 
     return {item_id: units[item_id] / 2.0 for item_id in item_ids}
+
+
+class TaskHoursAllocator:
+    def __init__(
+        self,
+        client: GeminiClient,
+        settings: ReportSettings,
+        config: AppConfig,
+    ) -> None:
+        self._client = client
+        self._settings = settings
+        self._config = config
+
+    def allocate(
+        self,
+        project_name: str,
+        sections: list[ReportSection],
+        extra_lines: list[str],
+        total_hours: int,
+    ) -> tuple[list[ReportSection], list[ExtraTaskLine]]:
+        items = flatten_alloc_items(sections, extra_lines)
+        if not items or total_hours <= 0:
+            return sections, [ExtraTaskLine(text=line) for line in extra_lines]
+
+        prompt = self._build_prompt(project_name, total_hours, items)
+        item_ids = [item["id"] for item in items]
+
+        try:
+            raw = strip_json_fence(
+                self._client.generate(
+                    prompt, model=self._settings.gemini_paraphrase_model
+                )
+            )
+            parsed = json.loads(raw)
+            raw_hours = self._parse_hours(parsed, item_ids)
+        except Exception:
+            print("WARNING: Task hours allocation failed; using equal split.")
+            raw_hours = fallback_equal_hours(item_ids, total_hours)
+
+        hours_map = normalize_hours(raw_hours, item_ids, total_hours)
+        return self._apply_hours(sections, extra_lines, hours_map)
+
+    @staticmethod
+    def _build_prompt(
+        project_name: str,
+        total_hours: int,
+        items: list[AllocItem],
+    ) -> str:
+        items_block = "\n".join(
+            f"- id: {item['id']} | kind: {item['kind']} | text: {item['text']}"
+            for item in items
+        )
+        return render_prompt(
+            "task_hours_alloc.md",
+            project_name=project_name,
+            total_hours=str(total_hours),
+            items_block=items_block,
+        )
+
+    @staticmethod
+    def _parse_hours(parsed: object, item_ids: list[str]) -> dict[str, float]:
+        if not isinstance(parsed, list):
+            raise ValueError("expected JSON array")
+
+        expected = set(item_ids)
+        raw: dict[str, float] = {}
+        for row in parsed:
+            if not isinstance(row, dict):
+                continue
+            item_id = row.get("id")
+            hours = row.get("hours")
+            if item_id in expected and hours is not None:
+                raw[str(item_id)] = float(hours)
+
+        if set(raw.keys()) != expected:
+            raise ValueError("missing or extra item ids")
+        return raw
+
+    @staticmethod
+    def _apply_hours(
+        sections: list[ReportSection],
+        extra_lines: list[str],
+        hours_map: dict[str, float],
+    ) -> tuple[list[ReportSection], list[ExtraTaskLine]]:
+        out_sections = copy.deepcopy(sections)
+        bullet_idx = 0
+        for section in out_sections:
+            for subsection in section["subsections"]:
+                for bullet in subsection["bullets"]:
+                    bullet["hours"] = hours_map[f"b-{bullet_idx}"]
+                    bullet_idx += 1
+
+        out_extras = [
+            ExtraTaskLine(text=line, hours=hours_map[f"e-{i}"])
+            for i, line in enumerate(extra_lines)
+        ]
+        return out_sections, out_extras
