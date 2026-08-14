@@ -15,6 +15,7 @@ from tra.types import CommitDateBasis
 @dataclass(frozen=True)
 class ReportSettings:
     report_hours: bool
+    show_task_hours: bool
     tag_environment: bool
     env_map: EnvMapConfig
     total_hours: int
@@ -101,6 +102,7 @@ def load_config(config_path: Path | None = None) -> AppConfig:
 
     settings = ReportSettings(
         report_hours=bool(raw.get("report_hours", True)),
+        show_task_hours=bool(raw.get("show_task_hours", False)),
         tag_environment=bool(raw.get("tag_environment", True)),
         env_map=parse_env_map(
             raw.get("env_map"),

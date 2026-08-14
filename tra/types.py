@@ -1,4 +1,4 @@
-from typing import Literal, TypedDict
+from typing import Literal, NotRequired, TypedDict
 
 EnvLabel = str
 CommitDateBasis = Literal["author", "committer"]
@@ -15,6 +15,12 @@ class CommitRecord(TypedDict):
 class BulletItem(TypedDict):
     text: str
     env: EnvLabel
+    hours: NotRequired[float | None]
+
+
+class ExtraTaskLine(TypedDict):
+    text: str
+    hours: NotRequired[float | None]
 
 
 class SubsectionBlock(TypedDict):
