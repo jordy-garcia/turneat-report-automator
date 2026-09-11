@@ -14,8 +14,8 @@
     "author_emails": ["you@company.com"],
     "exclude_pr_merge_commits": true,
     "exclude_environment_sync_merges": true,
-    "gemini_model": "gemini-2.5-flash",
-    "gemini_paraphrase_model": "gemini-2.5-flash",
+    "gemini_model": "gemini-3.7-flash",
+    "gemini_paraphrase_model": "gemini-3.7-flash",
     "write_ai_debug_file": true,
     "calendar_timezone": "America/Mexico_City",
     "commit_date_basis": "committer"
@@ -33,7 +33,7 @@
         {
           "path": "/absolute/path/to/repository-three",
           "author_emails": ["you@company.com"],
-          "exclude_pr_merge_commits": true
+          "exclude_pr_merge_commits": false
         }
       ]
     }
